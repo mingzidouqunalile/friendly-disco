@@ -1,0 +1,88 @@
+name: Manual Trigger Code Analysis
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze_source:
+    runs-on: ubuntu-latest
+
+    outputs:
+      required_inputs: ${{ steps.collect_info.outputs.required_inputs }}
+      languages_envs: ${{ steps.analyze_lang_envs.outputs.report }}
+
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+   
+    
+    - name: Setup Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: 3.9
+    
+   
+    - name: Install Dependencies
+      run: |
+
+        python -m pip install pygments
+
+  
+    - name: Collect Required User Inputs
+      id: collect_info
+      run: |
+
+        # 简单示例，通过查找代码中的关键字来猜测需要的输入
+        REQUIRED_INPUTS=$(git grep -iE --files-with-matches 'token|api_key|access_token' | xargs basename | sort -u)
+        echo "::set-output name=required_inputs::$REQUIRED_INPUTS"
+
+  
+   
+    
+    - name: Analyze Languages and Environments
+      id: analyze_lang_envs
+      run: |
+
+        # 语言和环境检测
+        LANG_ENV_REPORT=$(mktemp)
+        git ls-files -- '*.py' '*.js' '*.java' '*.ts' | while read file; do
+          lang=$(pygmentize -N "$file" | awk '{print $1}')
+          echo "$file: $lang" >> "$LANG_ENV_REPORT"
+        done
+        echo "$LANG_ENV_REPORT" > jobfinish/languages_and_environments.txt
+        echo "::set-output name=report::jobfinish/languages_and_environments.txt"
+
+   
+    
+    - name: Check for Security Issues and Best Practices
+      id: security_check
+      run: |
+
+        # 示例：检查硬编码的API密钥
+        if git grep -iE 'token|api_key|access_token' | grep -qv '^vendor/'; then
+          echo "::warning ::检测到硬编码的API密钥，请使用环境变量或GitHub Secrets管理。"
+          echo "::notice  ::建议使用GitHub Actions的secrets功能存储敏感信息。"
+        fi
+        # 示例：检查其他潜在安全问题，此处可添加更多检查逻辑
+
+   
+    
+    - name: Upload Job Finish Reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: jobfinish
+        path: jobfinish/
+
+  
+    
+    - name: Comment on Pull Request
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+
+          const output = `### 分析完成\n\n- **所需用户输入**:\n${process.env.REQUIRED_INPUTS.split(' ').map(i => `- \`${i}\``).join('\n')}\n- **语言
+    
